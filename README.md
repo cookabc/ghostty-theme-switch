@@ -5,8 +5,8 @@ A command-line tool to quickly switch themes in the [Ghostty](https://ghostty.or
 ## Features
 
 - **200+ built-in themes** - Access all Ghostty's built-in themes
-- **Interactive browser** - Built-in TUI theme browser with live preview
-- **fzf integration** - Quick fuzzy selection if fzf is available
+- **fzf integration** - Fuzzy search theme selector with [fzf](https://github.com/junegunn/fzf)
+- **Fallback selector** - Simple numbered list selector when fzf is not available
 - **Quick commands** - Set light/dark themes, random theme, or specific themes
 - **Cross-platform** - Works on macOS and Linux
 - **Safe** - Automatically backs up your config before making changes
@@ -19,30 +19,29 @@ cd ghostty-theme-switch
 ./install.sh
 ```
 
+**Recommended**: Install [fzf](https://github.com/junegunn/fzf) for the best experience:
+```bash
+brew install fzf  # macOS
+```
+
 ## Usage
 
-### Interactive Mode (Built-in Browser)
+### Interactive Mode
 
 ```bash
 ghostty-theme
 ```
 
-Opens Ghostty's built-in theme browser with live preview:
-- `↑↓` - Navigate themes
-- `Page Up/Down` - Jump by page
-- `Home/End` - Jump to first/last theme
-- `Enter` - Apply theme to config
-- `Esc` or `F1` - Exit
+**With fzf installed**: Fuzzy search theme selector
+- Type to filter themes
+- `↑↓` - Navigate
+- `Enter` - Apply theme
+- `Esc` - Cancel
 
-### Quick Select (fzf)
-
-If you have [fzf](https://github.com/junegunn/fzf) installed:
-
-```bash
-ghostty-theme quick
-# or
-ghostty-theme -q
-```
+**Without fzf**: Simple numbered selector
+- Enter theme number to apply
+- `n/p` - Next/prev page
+- `q` - Quit
 
 ### Direct Commands
 
@@ -91,7 +90,7 @@ rm ~/.local/bin/ghostty-theme
 
 - Ghostty terminal emulator
 - Bash or zsh shell
-- fzf (optional, for `--quick` mode)
+- fzf (optional, for fuzzy search)
 
 ## License
 

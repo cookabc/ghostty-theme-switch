@@ -4,7 +4,7 @@
 
 set -e
 
-VERSION="2.0.0"
+VERSION="2.1.0"
 
 # Config file location
 CONFIG_FILE="$HOME/Library/Application Support/com.mitchellh.ghostty/config"
@@ -32,12 +32,6 @@ else
     GHOSTTY_EXEC="ghostty"
 fi
 
-# Cleanup
-cleanup() {
-    rm -f /tmp/ghostty-theme-selected.txt
-}
-trap cleanup EXIT
-
 # Usage
 usage() {
     echo -e "${CYAN}Ghostty Theme Switcher${NC} v${VERSION}"
@@ -52,7 +46,7 @@ usage() {
     echo "  ghostty-theme version            Show version"
     echo ""
     echo "Examples:"
-    echo "  ghostty-theme                    # Built-in theme browser"
+    echo "  ghostty-theme                    # Interactive selector"
     echo "  ghostty-theme \"Dracula\"          # Apply Dracula theme"
     echo "  ghostty-theme random             # Random theme"
 }
@@ -95,13 +89,9 @@ apply_theme() {
     echo -e "${YELLOW}Press ${BOLD}Cmd+Shift+${NC},${YELLOW} to reload${NC}"
 }
 
-# Get all themes as array
-get_themes_array() {
-    local themes=()
-    while IFS= read -r line; do
-        themes+=("$line")
-    done < <(ghostty +list-themes 2>/dev/null | sed 's/ (resources)$//' | sort)
-    printf '%s\n' "${themes[@]}"
+# Get all themes
+get_all_themes() {
+    ghostty +list-themes 2>/dev/null | sed 's/ (resources)$//' | sort
 }
 
 # Apply theme directly
@@ -109,7 +99,7 @@ apply_direct() {
     local new_theme="$1"
 
     # Verify theme exists
-    if ! get_themes_array | grep -qx "$new_theme"; then
+    if ! get_all_themes | grep -qx "$new_theme"; then
         echo -e "${RED}Error: Theme '$new_theme' not found${NC}" >&2
         echo -e "${YELLOW}Use 'ghostty-theme list' to see available themes${NC}" >&2
         exit 1
@@ -120,7 +110,10 @@ apply_direct() {
 
 # Set random theme
 set_random_theme() {
-    local all_themes=($(get_themes_array))
+    local all_themes=()
+    while IFS= read -r line; do
+        all_themes+=("$line")
+    done < <(get_all_themes)
     local count=${#all_themes[@]}
     apply_theme "${all_themes[$((RANDOM % count))]}"
 }
@@ -133,26 +126,93 @@ set_mode_theme() {
     apply_theme "$theme_name"
 }
 
-# Quick theme selector using fzf
-quick_select() {
-    if ! command -v fzf &>/dev/null; then
-        echo -e "${YELLOW}fzf not found. Using built-in selector instead...${NC}"
-        echo ""
-        sleep 1
-        # Fall back to built-in
-        exec "$GHOSTTY_EXEC" +list-themes
-        return
-    fi
-
+# Simple selector (fallback when fzf not available)
+simple_select() {
     local current=$(get_current_theme)
-    local selected=$(get_themes_array | \
-        fzf --height=50% \
-            --prompt="Select theme: " \
+    local -a themes
+    while IFS= read -r line; do
+        themes+=("$line")
+    done < <(get_all_themes)
+
+    local page_size=20
+    local page=0
+    local total_pages=$(( (${#themes[@]} + page_size - 1) / page_size ))
+    local selected=0
+
+    while true; do
+        clear
+        echo -e "${CYAN}${BOLD}╔═══════════════════════════════════════════╗${NC}"
+        echo -e "${CYAN}${BOLD}║       Ghostty Theme Selector              ║${NC}"
+        echo -e "${CYAN}${BOLD}╚═══════════════════════════════════════════╝${NC}"
+        echo ""
+        echo -e "${BOLD}Page $((page + 1))/$total_pages${NC} - ${YELLOW}n/p${NC} for next/prev page, ${YELLOW}q${NC} to quit"
+        echo ""
+
+        local start=$((page * page_size))
+        local end=$((start + page_size))
+        if [[ $end -gt ${#themes[@]} ]]; then
+            end=${#themes[@]}
+        fi
+
+        for ((i=start; i<end; i++)); do
+            local num=$((i + 1))
+            if [[ "${themes[$i]}" == "$current" ]]; then
+                echo -e "  ${GREEN}[$num]${NC} ${themes[$i]} ${CYAN}(current)${NC}"
+            else
+                echo -e "  [$num] ${themes[$i]}"
+            fi
+        done
+
+        echo ""
+        echo -ne "${YELLOW}Enter number to apply (or n/p/q): ${NC}"
+
+        local input
+        read input
+
+        case "$input" in
+            q|Q|exit)
+                echo ""
+                echo "No changes made"
+                exit 0
+                ;;
+            n|N|next)
+                if [[ $page -lt $((total_pages - 1)) ]]; then
+                    ((page++))
+                fi
+                ;;
+            p|P|prev)
+                if [[ $page -gt 0 ]]; then
+                    ((page--))
+                fi
+                ;;
+            *)
+                if [[ "$input" =~ ^[0-9]+$ ]] && [[ $input -ge 1 ]] && [[ $input -le ${#themes[@]} ]]; then
+                    apply_theme "${themes[$((input - 1))]}"
+                    exit 0
+                else
+                    echo -e "${RED}Invalid selection${NC}"
+                    sleep 1
+                fi
+                ;;
+        esac
+    done
+}
+
+# fzf selector
+fzf_select() {
+    local current=$(get_current_theme)
+    local selected
+
+    selected=$(get_all_themes | \
+        fzf --height=60% \
+            --prompt="Theme> " \
             --query="$current" \
-            --header="[Enter] to apply, [Esc] to cancel" \
+            --header="[Enter] Apply | [Esc] Cancel" \
             --border=rounded \
-            --preview="echo 'Theme: {}'" \
-            --preview-window=down:1:hidden)
+            --marker="●" \
+            --pointer="→" \
+            --color=header:cyan,pointer:cyan,marker:green \
+            --preview-window=hidden)
 
     if [[ -n "$selected" ]]; then
         apply_theme "$selected"
@@ -161,14 +221,26 @@ quick_select() {
     fi
 }
 
+# Main interactive selector
+interactive_select() {
+    echo -e "${CYAN}Ghostty Theme Selector${NC} v${VERSION}"
+    echo ""
+
+    if command -v fzf &>/dev/null; then
+        fzf_select
+    else
+        echo -e "${YELLOW}fzf not found. Using simple selector...${NC}"
+        echo -e "${CYAN}Tip: Install fzf for better experience${NC}"
+        echo ""
+        sleep 1
+        simple_select
+    fi
+}
+
 # Main
 case "$1" in
     ""|"-i"|"--interactive")
-        # Use Ghostty's built-in theme browser
-        echo -e "${CYAN}Opening Ghostty theme browser...${NC}"
-        echo -e "${YELLOW}(Use F1 for help, Esc to exit, Enter to select)${NC}"
-        echo ""
-        exec "$GHOSTTY_EXEC" +list-themes
+        interactive_select
         ;;
     "list"|"--list"|"-l")
         list_themes
@@ -184,9 +256,6 @@ case "$1" in
         ;;
     "dark"|"--dark")
         set_mode_theme "dark"
-        ;;
-    "quick"|"--quick"|"-q")
-        quick_select
         ;;
     "version"|"--version"|"-v")
         echo "ghostty-theme v${VERSION}"
