@@ -1,11 +1,11 @@
 # Ghostty Theme Switcher
 
-A command-line tool to quickly switch themes in the [Ghostty](https://ghostty.org) terminal emulator with **live preview**.
+A command-line tool to quickly switch themes in the [Ghostty](https://ghostty.org) terminal emulator with **in-terminal preview**.
 
 ## Features
 
 - **200+ built-in themes** - Access all Ghostty's built-in themes
-- **Live preview** - Preview themes in a new Ghostty window before applying
+- **In-terminal preview** - Preview panel showing theme info while browsing
 - **fzf integration** - Fuzzy search theme selector with [fzf](https://github.com/junegunn/fzf)
 - **Fallback selector** - Simple numbered list selector when fzf is not available
 - **Quick commands** - Set light/dark themes, random theme, or specific themes
@@ -33,32 +33,21 @@ brew install fzf  # macOS
 ghostty-theme
 ```
 
-1. Select a theme (fzf fuzzy search or numbered list)
-2. A **new Ghostty window** opens showing the theme preview
-3. Choose:
-   - `[y]` - Apply theme to your config
-   - `[n]` - Cancel (no changes)
-
-**With fzf installed**: Fuzzy search theme selector
-- Type to filter themes
-- `↑↓` - Navigate
-- `Enter` - Open preview window
+- **Left panel**: Theme list (fuzzy search with typing)
+- **Right panel**: Preview showing theme name, colors, and sample code
+- `↑↓` - Navigate themes
+- `Enter` - Apply selected theme
 - `Esc` - Cancel
-
-**Without fzf**: Simple numbered selector
-- Enter theme number to preview
-- `n/p` - Next/prev page
-- `q` - Quit
 
 ### Direct Commands
 
 ```bash
-# Preview and apply a specific theme
+# Apply a specific theme
 ghostty-theme "Dracula"
 ghostty-theme "TokyoNight"
 ghostty-theme "Nord"
 
-# Preview and apply a random theme
+# Apply a random theme
 ghostty-theme random
 
 # Quick light/dark mode
@@ -77,7 +66,7 @@ ghostty-theme version
 
 ## Applying Changes
 
-After accepting a theme, reload your Ghostty config:
+After applying a theme, reload your Ghostty config:
 - **macOS**: `Cmd+Shift+,`
 - **Linux**: `Ctrl+Shift+,`
 
@@ -98,7 +87,7 @@ rm -rf /tmp/ghostty-theme-preview
 
 - Ghostty terminal emulator
 - Bash or zsh shell
-- fzf (optional, for fuzzy search)
+- fzf (optional, for fuzzy search and preview)
 
 ## License
 
