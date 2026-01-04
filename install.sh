@@ -102,6 +102,23 @@ main() {
     echo "  $SCRIPT_NAME --help   # Show all options"
     echo ""
     echo -e "${GREEN}Installation complete!${NC}"
+    echo ""
+
+    # Check for fzf and suggest installation
+    if ! command -v fzf &>/dev/null; then
+        echo -e "${YELLOW}─────────────────────────────────────────${NC}"
+        echo -e "${CYAN}Tip: Install fzf for better theme selection${NC}"
+        echo -e "${YELLOW}─────────────────────────────────────────${NC}"
+        echo ""
+        echo "  fzf enables fuzzy search theme selector."
+        echo ""
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            echo -e "  ${GREEN}brew install fzf${NC}"
+        else
+            echo -e "  See: https://github.com/junegunn/fzf#installation"
+        fi
+        echo ""
+    fi
 }
 
 # Run main
