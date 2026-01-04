@@ -1,11 +1,11 @@
 #!/bin/bash
 # Ghostty Theme Switcher
-# A simple tool to switch Ghostty terminal themes
+# A simple tool to switch Ghostty terminal themes with live preview
 # https://github.com/yourusername/ghostty-theme-switch
 
 set -e
 
-VERSION="1.0.0"
+VERSION="1.1.0"
 
 # Config file location (macOS)
 CONFIG_FILE="$HOME/Library/Application Support/com.mitchellh.ghostty/config"
@@ -19,6 +19,10 @@ if [[ ! -f "$CONFIG_FILE" ]]; then
     CONFIG_FILE="$HOME/.config/ghostty/config"
 fi
 
+# Temp directory for preview state
+PREVIEW_TMP_DIR="${TMPDIR:-/tmp}/ghostty-theme-preview"
+PREVIEW_STATE_FILE="$PREVIEW_TMP_DIR/state"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -28,24 +32,36 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m' # No Color
 
+# Detect platform
+detect_platform() {
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        echo "macos"
+    else
+        echo "linux"
+    fi
+}
+
+PLATFORM=$(detect_platform)
+
 # Print usage
 usage() {
     echo -e "${CYAN}Ghostty Theme Switcher${NC} v${VERSION}"
     echo ""
     echo "Usage:"
-    echo "  ghostty-theme                    Interactive theme selector"
+    echo "  ghostty-theme                    Interactive theme selector with preview"
     echo "  ghostty-theme list               List all available themes"
     echo "  ghostty-theme current            Show current theme"
-    echo "  ghostty-theme <theme-name>       Set specific theme"
-    echo "  ghostty-theme random             Set a random theme"
-    echo "  ghostty-theme light/dark         Set light/dark mode theme"
+    echo "  ghostty-theme <theme-name>       Preview & apply specific theme"
+    echo "  ghostty-theme random             Preview & apply a random theme"
+    echo "  ghostty-theme light/dark         Preview & apply light/dark mode theme"
+    echo "  ghostty-theme --no-preview       Apply theme without preview"
     echo "  ghostty-theme version            Show version info"
     echo ""
     echo "Examples:"
-    echo "  ghostty-theme                    # Interactive selection"
-    echo "  ghostty-theme \"Dracula\""
-    echo "  ghostty-theme random"
-    echo "  ghostty-theme light"
+    echo "  ghostty-theme                    # Interactive selection with preview"
+    echo "  ghostty-theme \"Dracula\"          # Preview and apply Dracula"
+    echo "  ghostty-theme random             # Preview random theme"
+    echo "  ghostty-theme --no-preview \"Nord\" # Apply directly"
 }
 
 # Get current theme
@@ -77,8 +93,26 @@ list_themes() {
     done
 }
 
-# Set theme
-set_theme() {
+# Apply theme to config (write to file)
+apply_theme_to_config() {
+    local new_theme="$1"
+
+    # Backup config
+    cp "$CONFIG_FILE" "$CONFIG_FILE.bak"
+
+    # Update or add theme line
+    if grep -qE "^theme[[:space:]]*=" "$CONFIG_FILE"; then
+        awk -v new_theme="$new_theme" '/^theme[[:space:]]*=/ {$0 = "theme = " new_theme} 1' "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
+    else
+        echo "theme = $new_theme" >> "$CONFIG_FILE"
+    fi
+
+    echo -e "${GREEN}Applied theme: ${BOLD}$new_theme${NC}"
+    echo -e "${YELLOW}Press ${BOLD}Cmd+Shift+${NC},${YELLOW} to reload${NC}"
+}
+
+# Preview and apply theme
+preview_and_apply_theme() {
     local new_theme="$1"
 
     # Check if theme exists
@@ -88,28 +122,134 @@ set_theme() {
         exit 1
     fi
 
-    # Backup config
-    cp "$CONFIG_FILE" "$CONFIG_FILE.bak"
+    # Ensure temp directory exists
+    mkdir -p "$PREVIEW_TMP_DIR"
 
-    # Update or add theme line
-    if grep -qE "^theme[[:space:]]*=" "$CONFIG_FILE"; then
-        # Replace existing theme line using awk
-        awk -v new_theme="$new_theme" '/^theme[[:space:]]*=/ {$0 = "theme = " new_theme} 1' "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
+    # Create preview confirmation script
+    local confirm_script="$PREVIEW_TMP_DIR/confirm.sh"
+    cat > "$confirm_script" <<'PREVIEW_EOF'
+#!/bin/bash
+THEME_NAME="$1"
+CONFIG_FILE="$2"
+PREVIEW_STATE_FILE="$3"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+clear
+echo -e "${CYAN}${BOLD}╔═══════════════════════════════════════════╗${NC}"
+echo -e "${CYAN}${BOLD}║          Theme Preview                     ║${NC}"
+echo -e "${CYAN}${BOLD}╚═══════════════════════════════════════════╝${NC}"
+echo ""
+echo -e "${BOLD}Theme:${NC} $THEME_NAME"
+echo ""
+echo -e "${YELLOW}This is a preview. Do you want to keep this theme?${NC}"
+echo ""
+echo -e "  ${GREEN}[y]${NC} Yes - Apply this theme"
+echo -e "  ${RED}[n]${NC} No  - Cancel and close"
+echo -e "  ${YELLOW}[r]${NC}    - Refresh preview"
+echo ""
+
+while true; do
+    read -p "Your choice (y/n/r): " choice
+    case "$choice" in
+        y|Y)
+            # Apply to config
+            cp "$CONFIG_FILE" "$CONFIG_FILE.bak"
+            if grep -qE "^theme[[:space:]]*=" "$CONFIG_FILE"; then
+                awk -v new_theme="$THEME_NAME" '/^theme[[:space:]]*=/ {$0 = "theme = " new_theme} 1' "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
+            else
+                echo "theme = $THEME_NAME" >> "$CONFIG_FILE"
+            fi
+            echo "accepted" > "$PREVIEW_STATE_FILE"
+            clear
+            echo -e "${GREEN}✓ Theme applied: ${BOLD}$THEME_NAME${NC}"
+            echo -e "${YELLOW}Press ${BOLD}Cmd+Shift+${NC},${YELLOW} to reload other windows${NC}"
+            echo ""
+            echo -e "${YELLOW}Press Enter to close this window...${NC}"
+            read
+            exit 0
+            ;;
+        n|N)
+            echo "rejected" > "$PREVIEW_STATE_FILE"
+            exit 0
+            ;;
+        r|R)
+            # Refresh - just clear and redisplay
+            clear
+            echo -e "${CYAN}${BOLD}╔═══════════════════════════════════════════╗${NC}"
+            echo -e "${CYAN}${BOLD}║          Theme Preview                     ║${NC}"
+            echo -e "${CYAN}${BOLD}╚═══════════════════════════════════════════╝${NC}"
+            echo ""
+            echo -e "${BOLD}Theme:${NC} $THEME_NAME"
+            echo ""
+            echo -e "${YELLOW}This is a preview. Do you want to keep this theme?${NC}"
+            echo ""
+            echo -e "  ${GREEN}[y]${NC} Yes - Apply this theme"
+            echo -e "  ${RED}[n]${NC} No  - Cancel and close"
+            echo -e "  ${YELLOW}[r]${NC}    - Refresh preview"
+            echo ""
+            ;;
+        *)
+            echo -e "${RED}Invalid choice. Please enter y, n, or r.${NC}"
+            ;;
+    esac
+done
+PREVIEW_EOF
+
+    chmod +x "$confirm_script"
+
+    # Clear previous state
+    rm -f "$PREVIEW_STATE_FILE"
+
+    # Open preview window with the theme
+    if [[ "$PLATFORM" == "macos" ]]; then
+        open -na "Ghostty.app" --args --theme="$new_theme" -e "'$confirm_script' '$new_theme' '$CONFIG_FILE' '$PREVIEW_STATE_FILE'"
     else
-        # Add theme line
-        echo "theme = $new_theme" >> "$CONFIG_FILE"
+        ghostty --theme="$new_theme" -e "'$confirm_script' '$new_theme' '$CONFIG_FILE' '$PREVIEW_STATE_FILE'" &
     fi
 
-    echo -e "${GREEN}Theme changed to: ${BOLD}$new_theme${NC}"
+    # Wait for user decision (with timeout)
+    echo -e "${CYAN}Preview window opened${NC}"
+    echo -e "${YELLOW}Waiting for your decision...${NC}"
 
-    # Try to reload Ghostty config
-    reload_config
+    local waited=0
+    local timeout=300  # 5 minutes max
+    while [[ ! -f "$PREVIEW_STATE_FILE" ]] && [[ $waited -lt $timeout ]]; do
+        sleep 0.5
+        ((waited++))
+    done
+
+    if [[ -f "$PREVIEW_STATE_FILE" ]]; then
+        local decision=$(cat "$PREVIEW_STATE_FILE")
+        rm -f "$PREVIEW_STATE_FILE"
+
+        if [[ "$decision" == "accepted" ]]; then
+            echo -e "${GREEN}✓ Theme accepted and applied${NC}"
+        else
+            echo -e "${YELLOW}Theme preview cancelled${NC}"
+        fi
+    else
+        echo -e "${YELLOW}Preview timed out or was closed${NC}"
+    fi
 }
 
-# Reload Ghostty configuration
-reload_config() {
-    echo -e "\n${YELLOW}Press ${BOLD}Cmd+Shift+${NC},${YELLOW} to reload the config${NC}"
-    echo -e "${YELLOW}Or restart Ghostty to apply changes${NC}"
+# Apply theme directly (no preview)
+apply_theme_directly() {
+    local new_theme="$1"
+
+    # Check if theme exists
+    if ! get_all_themes | grep -qx "$new_theme"; then
+        echo -e "${RED}Error: Theme '$new_theme' not found${NC}" >&2
+        echo -e "${YELLOW}Use 'ghostty-theme list' to see available themes${NC}" >&2
+        exit 1
+    fi
+
+    apply_theme_to_config "$new_theme"
 }
 
 # Set random theme
@@ -117,7 +257,7 @@ set_random_theme() {
     local themes=($(get_all_themes))
     local count=${#themes[@]}
     local index=$((RANDOM % count))
-    set_theme "${themes[$index]}"
+    preview_and_apply_theme "${themes[$index]}"
 }
 
 # Set light/dark theme
@@ -126,65 +266,104 @@ set_mode_theme() {
     local theme_name
 
     if [[ "$mode" == "light" ]]; then
-        # Pick a nice light theme
         theme_name="Github Light"
     else
-        # Pick a nice dark theme
         theme_name="Dracula"
     fi
 
     # Verify theme exists
     if get_all_themes | grep -qx "$theme_name"; then
-        set_theme "$theme_name"
+        preview_and_apply_theme "$theme_name"
     else
         echo -e "${RED}Error: Default $mode theme not found${NC}" >&2
         exit 1
     fi
 }
 
-# Interactive selection using fzf if available, otherwise simple menu
+# Interactive selection with preview
 interactive_selection() {
     local themes=($(get_all_themes))
     local current=$(get_current_theme)
     local selected=""
 
-    echo -e "${CYAN}${BOLD}Ghostty Theme Switcher${NC}"
+    clear
+    echo -e "${CYAN}${BOLD}╔═══════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}${BOLD}║       Ghostty Theme Switcher             ║${NC}"
+    echo -e "${CYAN}${BOLD}╚═══════════════════════════════════════════╝${NC}"
     echo -e "${YELLOW}Current theme: ${BOLD}$current${NC}\n"
 
     # Check if fzf is available
     if command -v fzf &>/dev/null; then
         selected=$(printf "%s\n" "${themes[@]}" | \
-            fzf --height=40% \
-                --prompt="Select theme: " \
+            fzf --height=50% \
+                --prompt="Select theme to preview: " \
                 --query="$current" \
-                --preview="echo {}" \
-                --preview-window=up:1:hidden \
-                --header="[Enter] to apply, [Esc] to cancel")
+                --header="[Enter] to preview, [Esc] to cancel" \
+                --border=rounded \
+                --margin=1,2)
     else
         # Simple numbered menu
-        local i=1
-        for theme in "${themes[@]}"; do
-            if [[ "$theme" == "$current" ]]; then
-                echo -e "  ${GREEN}$i)${NC} $theme ${CYAN}(current)${NC}"
-            else
-                echo "  $i) $theme"
-            fi
-            ((i++))
+        local per_page=20
+        local page=0
+        local total_pages=$(( (${#themes[@]} + per_page - 1) / per_page ))
+
+        while true; do
+            clear
+            echo -e "${CYAN}${BOLD}╔═══════════════════════════════════════════╗${NC}"
+            echo -e "${CYAN}${BOLD}║       Ghostty Theme Switcher             ║${NC}"
+            echo -e "${CYAN}${BOLD}╚═══════════════════════════════════════════╝${NC}"
+            echo -e "${YELLOW}Current theme: ${BOLD}$current${NC}"
+            echo -e "${YELLOW}Page $((page + 1))/$total_pages${NC}\n"
+
+            local start=$((page * per_page))
+            local end=$((start + per_page))
+
+            for ((i=start; i<end && i<${#themes[@]}; i++)); do
+                local theme="${themes[$i]}"
+                if [[ "$theme" == "$current" ]]; then
+                    echo -e "  ${GREEN}$((i+1))${NC}) $theme ${CYAN}(current)${NC}"
+                else
+                    echo "  $((i+1))) $theme"
+                fi
+            done
+
+            echo ""
+            echo "Commands: [number] to preview, [n] next page, [p] prev page, [q] quit"
+            echo ""
+
+            local nav=""
+            read -p "Your choice: " nav
+
+            case "$nav" in
+                q|Q)
+                    echo "Cancelled"
+                    exit 0
+                    ;;
+                n|N)
+                    if [[ $page -lt $((total_pages - 1)) ]]; then
+                        ((page++))
+                    fi
+                    ;;
+                p|P)
+                    if [[ $page -gt 0 ]]; then
+                        ((page--))
+                    fi
+                    ;;
+                *)
+                    if [[ "$nav" =~ ^[0-9]+$ ]] && [ "$nav" -ge 1 ] && [ "$nav" -le "${#themes[@]}" ]; then
+                        selected="${themes[$((nav-1))]}"
+                        break
+                    else
+                        echo -e "${RED}Invalid selection${NC}"
+                        sleep 1
+                    fi
+                    ;;
+            esac
         done
-
-        echo ""
-        read -p "Enter theme number: " num
-
-        if [[ "$num" =~ ^[0-9]+$ ]] && [ "$num" -ge 1 ] && [ "$num" -le "${#themes[@]}" ]; then
-            selected="${themes[$((num-1))]}"
-        else
-            echo -e "${RED}Invalid selection${NC}" >&2
-            exit 1
-        fi
     fi
 
     if [[ -n "$selected" ]]; then
-        set_theme "$selected"
+        preview_and_apply_theme "$selected"
     else
         echo "No theme selected"
     fi
@@ -210,6 +389,13 @@ case "$1" in
     "dark"|"--dark")
         set_mode_theme "dark"
         ;;
+    "--no-preview")
+        if [[ -z "$2" ]]; then
+            echo -e "${RED}Error: --no-preview requires a theme name${NC}" >&2
+            exit 1
+        fi
+        apply_theme_directly "$2"
+        ;;
     "version"|"--version"|"-v")
         echo "ghostty-theme v${VERSION}"
         ;;
@@ -217,6 +403,6 @@ case "$1" in
         usage
         ;;
     *)
-        set_theme "$*"
+        preview_and_apply_theme "$*"
         ;;
 esac
