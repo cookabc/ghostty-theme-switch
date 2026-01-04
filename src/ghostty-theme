@@ -206,61 +206,27 @@ PREVIEW_SCRIPT="/tmp/ghostty-theme-preview/preview.sh"
 # Ensure preview script exists
 ensure_preview_script() {
     mkdir -p /tmp/ghostty-theme-preview
-    if [[ ! -f "$PREVIEW_SCRIPT" ]]; then
-        cat > "$PREVIEW_SCRIPT" << 'EOF'
+    cat > "$PREVIEW_SCRIPT" << 'PREVIEWEOF'
 #!/bin/bash
 CONFIG_FILE="$HOME/Library/Application Support/com.mitchellh.ghostty/config"
-if [[ ! -f "$CONFIG_FILE" ]]; then
-    CONFIG_FILE="$XDG_CONFIG_HOME/ghostty/config"
-fi
-if [[ ! -f "$CONFIG_FILE" ]]; then
-    CONFIG_FILE="$HOME/.config/ghostty/config"
-fi
-get_current_theme() {
-    if [[ -f "$CONFIG_FILE" ]]; then
-        awk -F'= *' '/^theme[[:space:]]*=/ {print $2}' "$CONFIG_FILE" | tr -d '"' | tr -d "'"
-    else
-        echo "Unknown"
-    fi
-}
+[ ! -f "$CONFIG_FILE" ] && CONFIG_FILE="$XDG_CONFIG_HOME/ghostty/config"
+[ ! -f "$CONFIG_FILE" ] && CONFIG_FILE="$HOME/.config/ghostty/config"
 THEME="$1"
-CURRENT=$(get_current_theme)
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-CYAN='\033[0;36m'
-BLUE='\033[0;34m'
-MAGENTA='\033[0;35m'
-BOLD='\033[1m'
-DIM='\033[2m'
-WHITE='\033[0;37m'
-NC='\033[0m'
-echo -e "${CYAN}${BOLD}╔═══════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}${BOLD}║${NC}           ${BOLD}$THEME${NC}                    "
-echo -e "${CYAN}${BOLD}╚═══════════════════════════════════════════╝${NC}"
-echo ""
-echo -e "${BOLD}Color Preview:${NC}"
-echo ""
-echo -e "  ${RED}■${NC} Red    ${GREEN}■${NC} Green  ${YELLOW}■${NC} Yellow ${BLUE}■${NC} Blue"
-echo -e "  ${MAGENTA}■${NC} Magenta ${CYAN}■${NC} Cyan   ${WHITE}■${NC} White"
-echo ""
-echo -e "${BOLD}Sample Code:${NC}"
-echo ""
-echo -e "${DIM}# Syntax highlighting example${NC}"
-echo -e "${GREEN}function${NC} ${BLUE}hello${NC}${YELLOW}(){${NC}"
-echo -e "  ${CYAN}echo${NC} ${YELLOW}\"Hello, World!\"${NC}"
-echo -e "  ${MAGENTA}return${NC} ${GREEN}0${NC}"
-echo -e "${YELLOW}}${NC}"
-echo ""
-echo -e "${DIM}─────────────────────────────────────────${NC}"
-if [[ "$THEME" == "$CURRENT" ]]; then
-    echo -e "${GREEN}● Current theme${NC}"
-else
-    echo -e "${YELLOW}→ Press Enter to apply${NC}"
-fi
-EOF
-        chmod +x "$PREVIEW_SCRIPT"
-    fi
+printf "\033[1;36m┌─────────────────────────────────┐\033[0m\n"
+printf "\033[1;36m│  %s\033[0m\n" "$THEME"
+printf "\033[1;36m└─────────────────────────────────┘\033[0m\n"
+printf "\n"
+printf "\033[1mColors:\033[0m\n"
+printf "  \033[31m■\033[0m Red \033[32m■\033[0m Green \033[33m■\033[0m Yellow \033[34m■\033[0m Blue\n"
+printf "  \033[35m■\033[0m Magenta \033[36m■\033[0m Cyan \033[37m■\033[0m White\n"
+printf "\n"
+printf "\033[1mSample Code:\033[0m\n"
+printf "\033[2m# Comment\033[0m\n"
+printf "\033[32mfunction\033[0m \033[34mhello\033[0m\033[33m()\033[0m {\n"
+printf "  \033[36mecho\033[0m \033[33m\"Hello\"\033[0m\n"
+printf "\033[33m}\033[0m\n"
+PREVIEWEOF
+    chmod +x "$PREVIEW_SCRIPT"
 }
 
 # fzf selector with preview
@@ -279,7 +245,7 @@ fzf_select() {
             --pointer="→" \
             --color=header:cyan,pointer:cyan,marker:green,preview-border:cyan \
             --preview-window=right:35% \
-            --preview="$PREVIEW_SCRIPT '{}'")
+            --preview="bash '$PREVIEW_SCRIPT' {}")
 
     if [[ -n "$selected" ]]; then
         apply_theme "$selected"
