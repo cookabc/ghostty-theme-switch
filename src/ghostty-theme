@@ -1,0 +1,222 @@
+#!/bin/bash
+# Ghostty Theme Switcher
+# A simple tool to switch Ghostty terminal themes
+# https://github.com/yourusername/ghostty-theme-switch
+
+set -e
+
+VERSION="1.0.0"
+
+# Config file location (macOS)
+CONFIG_FILE="$HOME/Library/Application Support/com.mitchellh.ghostty/config"
+
+# Fallback for Linux
+if [[ ! -f "$CONFIG_FILE" ]]; then
+    CONFIG_FILE="$XDG_CONFIG_HOME/ghostty/config"
+fi
+
+if [[ ! -f "$CONFIG_FILE" ]]; then
+    CONFIG_FILE="$HOME/.config/ghostty/config"
+fi
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m' # No Color
+
+# Print usage
+usage() {
+    echo -e "${CYAN}Ghostty Theme Switcher${NC} v${VERSION}"
+    echo ""
+    echo "Usage:"
+    echo "  ghostty-theme                    Interactive theme selector"
+    echo "  ghostty-theme list               List all available themes"
+    echo "  ghostty-theme current            Show current theme"
+    echo "  ghostty-theme <theme-name>       Set specific theme"
+    echo "  ghostty-theme random             Set a random theme"
+    echo "  ghostty-theme light/dark         Set light/dark mode theme"
+    echo "  ghostty-theme version            Show version info"
+    echo ""
+    echo "Examples:"
+    echo "  ghostty-theme                    # Interactive selection"
+    echo "  ghostty-theme \"Dracula\""
+    echo "  ghostty-theme random"
+    echo "  ghostty-theme light"
+}
+
+# Get current theme
+get_current_theme() {
+    if [[ -f "$CONFIG_FILE" ]]; then
+        awk -F'= *' '/^theme[[:space:]]*=/ {print $2}' "$CONFIG_FILE" | tr -d '"' | tr -d "'"
+    else
+        echo "Unknown"
+    fi
+}
+
+# Get all available themes
+get_all_themes() {
+    ghostty +list-themes 2>/dev/null | sed 's/ (resources)$//' | sort
+}
+
+# List all themes
+list_themes() {
+    local current=$(get_current_theme)
+    echo -e "${BOLD}Available themes:${NC}"
+    echo ""
+
+    get_all_themes | while read -r theme; do
+        if [[ "$theme" == "$current" ]]; then
+            echo -e "  ${GREEN}●${NC} $theme ${CYAN}(current)${NC}"
+        else
+            echo -e "  ○ $theme"
+        fi
+    done
+}
+
+# Set theme
+set_theme() {
+    local new_theme="$1"
+
+    # Check if theme exists
+    if ! get_all_themes | grep -qx "$new_theme"; then
+        echo -e "${RED}Error: Theme '$new_theme' not found${NC}" >&2
+        echo -e "${YELLOW}Use 'ghostty-theme list' to see available themes${NC}" >&2
+        exit 1
+    fi
+
+    # Backup config
+    cp "$CONFIG_FILE" "$CONFIG_FILE.bak"
+
+    # Update or add theme line
+    if grep -qE "^theme[[:space:]]*=" "$CONFIG_FILE"; then
+        # Replace existing theme line using awk
+        awk -v new_theme="$new_theme" '/^theme[[:space:]]*=/ {$0 = "theme = " new_theme} 1' "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
+    else
+        # Add theme line
+        echo "theme = $new_theme" >> "$CONFIG_FILE"
+    fi
+
+    echo -e "${GREEN}Theme changed to: ${BOLD}$new_theme${NC}"
+
+    # Try to reload Ghostty config
+    reload_config
+}
+
+# Reload Ghostty configuration
+reload_config() {
+    echo -e "\n${YELLOW}Press ${BOLD}Cmd+Shift+${NC},${YELLOW} to reload the config${NC}"
+    echo -e "${YELLOW}Or restart Ghostty to apply changes${NC}"
+}
+
+# Set random theme
+set_random_theme() {
+    local themes=($(get_all_themes))
+    local count=${#themes[@]}
+    local index=$((RANDOM % count))
+    set_theme "${themes[$index]}"
+}
+
+# Set light/dark theme
+set_mode_theme() {
+    local mode="$1"
+    local theme_name
+
+    if [[ "$mode" == "light" ]]; then
+        # Pick a nice light theme
+        theme_name="Github Light"
+    else
+        # Pick a nice dark theme
+        theme_name="Dracula"
+    fi
+
+    # Verify theme exists
+    if get_all_themes | grep -qx "$theme_name"; then
+        set_theme "$theme_name"
+    else
+        echo -e "${RED}Error: Default $mode theme not found${NC}" >&2
+        exit 1
+    fi
+}
+
+# Interactive selection using fzf if available, otherwise simple menu
+interactive_selection() {
+    local themes=($(get_all_themes))
+    local current=$(get_current_theme)
+    local selected=""
+
+    echo -e "${CYAN}${BOLD}Ghostty Theme Switcher${NC}"
+    echo -e "${YELLOW}Current theme: ${BOLD}$current${NC}\n"
+
+    # Check if fzf is available
+    if command -v fzf &>/dev/null; then
+        selected=$(printf "%s\n" "${themes[@]}" | \
+            fzf --height=40% \
+                --prompt="Select theme: " \
+                --query="$current" \
+                --preview="echo {}" \
+                --preview-window=up:1:hidden \
+                --header="[Enter] to apply, [Esc] to cancel")
+    else
+        # Simple numbered menu
+        local i=1
+        for theme in "${themes[@]}"; do
+            if [[ "$theme" == "$current" ]]; then
+                echo -e "  ${GREEN}$i)${NC} $theme ${CYAN}(current)${NC}"
+            else
+                echo "  $i) $theme"
+            fi
+            ((i++))
+        done
+
+        echo ""
+        read -p "Enter theme number: " num
+
+        if [[ "$num" =~ ^[0-9]+$ ]] && [ "$num" -ge 1 ] && [ "$num" -le "${#themes[@]}" ]; then
+            selected="${themes[$((num-1))]}"
+        else
+            echo -e "${RED}Invalid selection${NC}" >&2
+            exit 1
+        fi
+    fi
+
+    if [[ -n "$selected" ]]; then
+        set_theme "$selected"
+    else
+        echo "No theme selected"
+    fi
+}
+
+# Main
+case "$1" in
+    ""|"-i"|"--interactive")
+        interactive_selection
+        ;;
+    "list"|"--list"|"-l")
+        list_themes
+        ;;
+    "current"|"--current"|"-c")
+        echo -e "${CYAN}Current theme:${NC} ${BOLD}$(get_current_theme)${NC}"
+        ;;
+    "random"|"--random"|"-r")
+        set_random_theme
+        ;;
+    "light"|"--light")
+        set_mode_theme "light"
+        ;;
+    "dark"|"--dark")
+        set_mode_theme "dark"
+        ;;
+    "version"|"--version"|"-v")
+        echo "ghostty-theme v${VERSION}"
+        ;;
+    "help"|"--help"|"-h")
+        usage
+        ;;
+    *)
+        set_theme "$*"
+        ;;
+esac
