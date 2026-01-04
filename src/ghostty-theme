@@ -5,7 +5,7 @@
 
 set -e
 
-VERSION="1.1.0"
+VERSION="1.2.0"
 
 # Config file location (macOS)
 CONFIG_FILE="$HOME/Library/Application Support/com.mitchellh.ghostty/config"
@@ -21,7 +21,9 @@ fi
 
 # Temp directory for preview state
 PREVIEW_TMP_DIR="${TMPDIR:-/tmp}/ghostty-theme-preview"
-PREVIEW_STATE_FILE="$PREVIEW_TMP_DIR/state"
+PREVIEW_THEME_FILE="$PREVIEW_TMP_DIR/current_theme"
+PREVIEW_ACTION_FILE="$PREVIEW_TMP_DIR/action"
+PREVIEW_PID_FILE="$PREVIEW_TMP_DIR/preview_pid"
 
 # Colors for output
 RED='\033[0;31m'
@@ -43,12 +45,25 @@ detect_platform() {
 
 PLATFORM=$(detect_platform)
 
+# Cleanup on exit
+cleanup() {
+    rm -f "$PREVIEW_THEME_FILE" "$PREVIEW_ACTION_FILE" "$PREVIEW_PID_FILE"
+    # Kill preview window if running
+    if [[ -f "$PREVIEW_PID_FILE" ]]; then
+        local pid=$(cat "$PREVIEW_PID_FILE" 2>/dev/null)
+        if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null || true
+        fi
+    fi
+}
+trap cleanup EXIT
+
 # Print usage
 usage() {
     echo -e "${CYAN}Ghostty Theme Switcher${NC} v${VERSION}"
     echo ""
     echo "Usage:"
-    echo "  ghostty-theme                    Interactive theme selector with preview"
+    echo "  ghostty-theme                    Interactive theme selector with live preview"
     echo "  ghostty-theme list               List all available themes"
     echo "  ghostty-theme current            Show current theme"
     echo "  ghostty-theme <theme-name>       Preview & apply specific theme"
@@ -58,7 +73,7 @@ usage() {
     echo "  ghostty-theme version            Show version info"
     echo ""
     echo "Examples:"
-    echo "  ghostty-theme                    # Interactive selection with preview"
+    echo "  ghostty-theme                    # Interactive selection with arrow keys"
     echo "  ghostty-theme \"Dracula\"          # Preview and apply Dracula"
     echo "  ghostty-theme random             # Preview random theme"
     echo "  ghostty-theme --no-preview \"Nord\" # Apply directly"
@@ -111,7 +126,137 @@ apply_theme_to_config() {
     echo -e "${YELLOW}Press ${BOLD}Cmd+Shift+${NC},${YELLOW} to reload${NC}"
 }
 
-# Preview and apply theme
+# Start live preview window
+start_preview_window() {
+    local initial_theme="$1"
+
+    mkdir -p "$PREVIEW_TMP_DIR"
+
+    # Create the preview watcher script
+    local watcher_script="$PREVIEW_TMP_DIR/watcher.sh"
+    cat > "$watcher_script" <<'WATCHER_EOF'
+#!/bin/bash
+THEME_FILE="$1"
+ACTION_FILE="$2"
+PID_FILE="$3"
+PLATFORM="$4"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+last_theme=""
+
+while true; do
+    # Read current theme from file
+    if [[ -f "$THEME_FILE" ]]; then
+        current_theme=$(cat "$THEME_FILE")
+    else
+        current_theme=""
+    fi
+
+    # Check for action from main window
+    if [[ -f "$ACTION_FILE" ]]; then
+        action=$(cat "$ACTION_FILE")
+        case "$action" in
+            "quit")
+                rm -f "$ACTION_FILE"
+                exit 0
+                ;;
+            "apply")
+                # Apply theme and show success message
+                if [[ -f "$THEME_FILE" ]]; then
+                    theme_name=$(cat "$THEME_FILE")
+                    clear
+                    echo -e "${GREEN}✓ Theme applied: ${BOLD}$theme_name${NC}"
+                    echo ""
+                    echo -e "${YELLOW}Press ${BOLD}Cmd+Shift+${NC},${YELLOW} to reload other windows${NC}"
+                    echo ""
+                    echo -e "${YELLOW}Press Enter to close...${NC}"
+                    read
+                fi
+                rm -f "$ACTION_FILE"
+                exit 0
+                ;;
+        esac
+    fi
+
+    # Restart window if theme changed
+    if [[ "$current_theme" != "$last_theme" ]] && [[ -n "$current_theme" ]]; then
+        # Save current theme
+        last_theme="$current_theme"
+
+        # Relaunch self with new theme
+        if [[ "$PLATFORM" == "macos" ]]; then
+            # Open new window and exit current one
+            open -na "Ghostty.app" --args --theme="$current_theme" -e "bash '$0' '$1' '$2' '$3' '$4'"
+            exit 0
+        else
+            ghostty --theme="$current_theme" -e "bash '$0' '$1' '$2' '$3' '$4'" &
+            exit 0
+        fi
+    fi
+
+    # Display preview UI
+    clear
+    echo -e "${CYAN}${BOLD}╔═══════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}${BOLD}║           Live Preview                     ║${NC}"
+    echo -e "${CYAN}${BOLD}╚═══════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "${BOLD}Theme:${NC} $current_theme"
+    echo ""
+    echo -e "${YELLOW}Use arrow keys in the main window to browse themes${NC}"
+    echo -e "${GREEN}Press Enter to apply, Esc/q to cancel${NC}"
+    echo ""
+
+    sleep 0.1
+done
+WATCHER_EOF
+
+    chmod +x "$watcher_script"
+
+    # Write initial theme
+    echo "$initial_theme" > "$PREVIEW_THEME_FILE"
+
+    # Clear previous action
+    rm -f "$PREVIEW_ACTION_FILE"
+
+    # Start preview window
+    if [[ "$PLATFORM" == "macos" ]]; then
+        open -na "Ghostty.app" --args --theme="$initial_theme" -e "'$watcher_script' '$PREVIEW_THEME_FILE' '$PREVIEW_ACTION_FILE' '$PREVIEW_PID_FILE' '$PLATFORM'"
+    else
+        ghostty --theme="$initial_theme" -e "'$watcher_script' '$PREVIEW_THEME_FILE' '$PREVIEW_ACTION_FILE' '$PREVIEW_PID_FILE' '$PLATFORM'" &
+    fi
+}
+
+# Update preview theme
+update_preview_theme() {
+    local theme="$1"
+    echo "$theme" > "$PREVIEW_THEME_FILE"
+}
+
+# Stop preview window
+stop_preview_window() {
+    echo "quit" > "$PREVIEW_ACTION_FILE" 2>/dev/null || true
+    rm -f "$PREVIEW_THEME_FILE" "$PREVIEW_ACTION_FILE" "$PREVIEW_PID_FILE"
+}
+
+# Apply theme from preview
+apply_from_preview() {
+    local theme="$1"
+    echo "apply" > "$PREVIEW_ACTION_FILE" 2>/dev/null || true
+
+    # Apply to config
+    apply_theme_to_config "$theme"
+
+    # Clean up
+    rm -f "$PREVIEW_THEME_FILE" "$PREVIEW_ACTION_FILE" "$PREVIEW_PID_FILE"
+}
+
+# Preview and apply theme (single preview mode)
 preview_and_apply_theme() {
     local new_theme="$1"
 
@@ -122,7 +267,6 @@ preview_and_apply_theme() {
         exit 1
     fi
 
-    # Ensure temp directory exists
     mkdir -p "$PREVIEW_TMP_DIR"
 
     # Create preview confirmation script
@@ -204,6 +348,7 @@ PREVIEW_EOF
     chmod +x "$confirm_script"
 
     # Clear previous state
+    PREVIEW_STATE_FILE="$PREVIEW_TMP_DIR/state"
     rm -f "$PREVIEW_STATE_FILE"
 
     # Open preview window with the theme
@@ -236,6 +381,8 @@ PREVIEW_EOF
     else
         echo -e "${YELLOW}Preview timed out or was closed${NC}"
     fi
+
+    rm -f "$confirm_script"
 }
 
 # Apply theme directly (no preview)
@@ -280,93 +427,141 @@ set_mode_theme() {
     fi
 }
 
-# Interactive selection with preview
+# Interactive selection with live preview (arrow key navigation)
 interactive_selection() {
     local themes=($(get_all_themes))
     local current=$(get_current_theme)
-    local selected=""
+    local selected_idx=0
+    local visible_count=15
+    local scroll_offset=0
 
-    clear
-    echo -e "${CYAN}${BOLD}╔═══════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}${BOLD}║       Ghostty Theme Switcher             ║${NC}"
-    echo -e "${CYAN}${BOLD}╚═══════════════════════════════════════════╝${NC}"
-    echo -e "${YELLOW}Current theme: ${BOLD}$current${NC}\n"
+    # Find current theme index
+    local i=0
+    for theme in "${themes[@]}"; do
+        if [[ "$theme" == "$current" ]]; then
+            selected_idx=$i
+            break
+        fi
+        ((i++))
+    done
 
-    # Check if fzf is available
-    if command -v fzf &>/dev/null; then
-        selected=$(printf "%s\n" "${themes[@]}" | \
-            fzf --height=50% \
-                --prompt="Select theme to preview: " \
-                --query="$current" \
-                --header="[Enter] to preview, [Esc] to cancel" \
-                --border=rounded \
-                --margin=1,2)
-    else
-        # Simple numbered menu
-        local per_page=20
-        local page=0
-        local total_pages=$(( (${#themes[@]} + per_page - 1) / per_page ))
+    # Start with current theme in view
+    scroll_offset=$((selected_idx > visible_count - 3 ? selected_idx - visible_count + 3 : 0))
 
-        while true; do
-            clear
-            echo -e "${CYAN}${BOLD}╔═══════════════════════════════════════════╗${NC}"
-            echo -e "${CYAN}${BOLD}║       Ghostty Theme Switcher             ║${NC}"
-            echo -e "${CYAN}${BOLD}╚═══════════════════════════════════════════╝${NC}"
-            echo -e "${YELLOW}Current theme: ${BOLD}$current${NC}"
-            echo -e "${YELLOW}Page $((page + 1))/$total_pages${NC}\n"
+    # Start preview window with initial theme
+    start_preview_window "${themes[$selected_idx]}"
 
-            local start=$((page * per_page))
-            local end=$((start + per_page))
+    # Save terminal settings
+    stty_save=$(stty -g 2>/dev/null || true)
 
-            for ((i=start; i<end && i<${#themes[@]}; i++)); do
-                local theme="${themes[$i]}"
-                if [[ "$theme" == "$current" ]]; then
-                    echo -e "  ${GREEN}$((i+1))${NC}) $theme ${CYAN}(current)${NC}"
-                else
-                    echo "  $((i+1))) $theme"
-                fi
-            done
+    # Set raw mode for immediate input
+    stty -icanon -echo 2>/dev/null || true
 
-            echo ""
-            echo "Commands: [number] to preview, [n] next page, [p] prev page, [q] quit"
-            echo ""
+    # Handle Ctrl+C
+    trap 'stty "$stty_save" 2>/dev/null || true; stop_preview_window; exit 0' INT
 
-            local nav=""
-            read -p "Your choice: " nav
+    while true; do
+        clear
 
-            case "$nav" in
-                q|Q)
-                    echo "Cancelled"
-                    exit 0
-                    ;;
-                n|N)
-                    if [[ $page -lt $((total_pages - 1)) ]]; then
-                        ((page++))
-                    fi
-                    ;;
-                p|P)
-                    if [[ $page -gt 0 ]]; then
-                        ((page--))
-                    fi
-                    ;;
-                *)
-                    if [[ "$nav" =~ ^[0-9]+$ ]] && [ "$nav" -ge 1 ] && [ "$nav" -le "${#themes[@]}" ]; then
-                        selected="${themes[$((nav-1))]}"
-                        break
-                    else
-                        echo -e "${RED}Invalid selection${NC}"
-                        sleep 1
-                    fi
-                    ;;
-            esac
+        # Header
+        echo -e "${CYAN}${BOLD}╔═══════════════════════════════════════════╗${NC}"
+        echo -e "${CYAN}${BOLD}║       Ghostty Theme Switcher             ║${NC}"
+        echo -e "${CYAN}${BOLD}╚═══════════════════════════════════════════╝${NC}"
+        echo -e "${YELLOW}Current: ${BOLD}$current${NC}  |  ${GREEN}Previewing: ${BOLD}${themes[$selected_idx]}${NC}"
+        echo ""
+
+        # Display visible themes
+        local end=$((scroll_offset + visible_count))
+        if [[ $end -gt ${#themes[@]} ]]; then
+            end=${#themes[@]}
+        fi
+
+        for ((i=scroll_offset; i<end; i++)); do
+            local theme="${themes[$i]}"
+            local marker=" "
+
+            if [[ $i -eq $selected_idx ]]; then
+                marker="${GREEN}►${NC}"
+                echo -e "${GREEN}▶${NC} ${BOLD}$theme${NC}"
+            else
+                echo "  $theme"
+            fi
         done
-    fi
 
-    if [[ -n "$selected" ]]; then
-        preview_and_apply_theme "$selected"
-    else
-        echo "No theme selected"
-    fi
+        # Footer
+        echo ""
+        echo -e "${BOLD}[$((selected_idx + 1))/${#themes[@]}]${NC}"
+        echo ""
+        echo -e "  ${GREEN}[↑↓]${NC} Navigate    ${GREEN}[Enter]${NC} Apply    ${YELLOW}[Home/End]${NC} First/Last"
+        echo -e "  ${YELLOW}[PgUp/PgDn]${NC} Page    ${RED}[Esc/q]${NC} Cancel"
+        echo ""
+
+        # Read single character
+        read -n 1 key 2>/dev/null || key=""
+
+        case "$key" in
+            $'\x1b')  # ESC sequence (arrow keys, etc)
+                read -n 2 -t 0.1 rest 2>/dev/null || rest=""
+
+                case "$rest" in
+                    '[A') # Up arrow
+                        ((selected_idx--))
+                        ;;
+                    '[B') # Down arrow
+                        ((selected_idx++))
+                        ;;
+                    '[5') # Page Up
+                        read -n 1 -t 0.1 t 2>/dev/null || true
+                        ((selected_idx -= visible_count))
+                        ;;
+                    '[6') # Page Down
+                        read -n 1 -t 0.1 t 2>/dev/null || true
+                        ((selected_idx += visible_count))
+                        ;;
+                    '[H') # Home
+                        selected_idx=0
+                        ;;
+                    '[F') # End
+                        selected_idx=$((${#themes[@]} - 1))
+                        ;;
+                    *) # Just ESC
+                        stty "$stty_save" 2>/dev/null || true
+                        stop_preview_window
+                        echo "Cancelled"
+                        exit 0
+                        ;;
+                esac
+                ;;
+            '') # Enter
+                stty "$stty_save" 2>/dev/null || true
+                apply_from_preview "${themes[$selected_idx]}"
+                exit 0
+                ;;
+            'q'|'Q')
+                stty "$stty_save" 2>/dev/null || true
+                stop_preview_window
+                echo "Cancelled"
+                exit 0
+                ;;
+        esac
+
+        # Bounds checking
+        if [[ $selected_idx -lt 0 ]]; then
+            selected_idx=0
+        elif [[ $selected_idx -ge ${#themes[@]} ]]; then
+            selected_idx=$((${#themes[@]} - 1))
+        fi
+
+        # Update scroll offset
+        if [[ $selected_idx -lt $scroll_offset ]]; then
+            scroll_offset=$selected_idx
+        elif [[ $selected_idx -ge $((scroll_offset + visible_count - 1)) ]]; then
+            scroll_offset=$((selected_idx - visible_count + 2))
+        fi
+
+        # Update preview
+        update_preview_theme "${themes[$selected_idx]}"
+    done
 }
 
 # Main
