@@ -279,7 +279,7 @@ fzf_select() {
             --pointer="→" \
             --color=header:cyan,pointer:cyan,marker:green,preview-border:cyan \
             --preview-window=right:35% \
-            --preview="$PREVIEW_SCRIPT {}")
+            --preview="$PREVIEW_SCRIPT '{}'")
 
     if [[ -n "$selected" ]]; then
         apply_theme "$selected"
