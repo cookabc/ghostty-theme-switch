@@ -1,12 +1,12 @@
 # Ghostty Theme Switcher
 
-A command-line tool to quickly switch themes in the [Ghostty](https://ghostty.org) terminal emulator with preview.
+A command-line tool to quickly switch themes in the [Ghostty](https://ghostty.org) terminal emulator.
 
 ## Features
 
 - **200+ built-in themes** - Access all Ghostty's built-in themes
-- **Interactive selection** - Browse themes with arrow keys
-- **Theme preview** - See themes in a preview window before applying
+- **Interactive browser** - Built-in TUI theme browser with live preview
+- **fzf integration** - Quick fuzzy selection if fzf is available
 - **Quick commands** - Set light/dark themes, random theme, or specific themes
 - **Cross-platform** - Works on macOS and Linux
 - **Safe** - Automatically backs up your config before making changes
@@ -21,55 +21,57 @@ cd ghostty-theme-switch
 
 ## Usage
 
-### Interactive Mode
+### Interactive Mode (Built-in Browser)
 
 ```bash
 ghostty-theme
 ```
 
-Use arrow keys to browse themes, then press `Enter` to preview and confirm:
+Opens Ghostty's built-in theme browser with live preview:
 - `↑↓` - Navigate themes
 - `Page Up/Down` - Jump by page
 - `Home/End` - Jump to first/last theme
-- `Enter` - Open preview window to apply theme
-- `Esc` or `q` - Cancel
+- `Enter` - Apply theme to config
+- `Esc` or `F1` - Exit
+
+### Quick Select (fzf)
+
+If you have [fzf](https://github.com/junegunn/fzf) installed:
+
+```bash
+ghostty-theme quick
+# or
+ghostty-theme -q
+```
 
 ### Direct Commands
 
 ```bash
-# Preview and apply a specific theme
+# Apply a specific theme directly
 ghostty-theme "Dracula"
 ghostty-theme "TokyoNight"
 ghostty-theme "Nord"
 
-# Preview a random theme
+# Apply a random theme
 ghostty-theme random
 
 # Quick light/dark mode
 ghostty-theme light
 ghostty-theme dark
 
-# List all themes
+# List all available themes
 ghostty-theme list
 
 # Show current theme
 ghostty-theme current
 
-# Apply theme WITHOUT preview
-ghostty-theme --no-preview "Nord"
+# Show version
+ghostty-theme version
 ```
-
-## How It Works
-
-1. Select a theme (interactive mode or direct command)
-2. A **preview window** opens with the theme applied
-3. Choose:
-   - `[y]` - Apply theme to your config
-   - `[n]` - Cancel (no changes)
 
 ## Applying Changes
 
-After accepting a theme, reload your Ghostty config:
+After applying a theme, reload your Ghostty config:
 - **macOS**: `Cmd+Shift+,`
 - **Linux**: `Ctrl+Shift+,`
 
@@ -83,13 +85,13 @@ Or manually:
 
 ```bash
 rm ~/.local/bin/ghostty-theme
-rm -rf /tmp/ghostty-theme-preview
 ```
 
 ## Requirements
 
 - Ghostty terminal emulator
-- Bash shell
+- Bash or zsh shell
+- fzf (optional, for `--quick` mode)
 
 ## License
 
