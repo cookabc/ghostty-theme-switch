@@ -3,10 +3,9 @@
 
 set -e
 
-VERSION="1.0.0"
+VERSION="2.5.0"
 SCRIPT_NAME="ghostty-theme"
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SOURCE_FILE="$SOURCE_DIR/src/$SCRIPT_NAME"
 
 # Colors
 RED='\033[0;31m'
@@ -43,9 +42,9 @@ main() {
     print_banner
 
     # Check if source file exists
-    if [[ ! -f "$SOURCE_FILE" ]]; then
-        echo -e "${RED}Error: Source file not found: $SOURCE_FILE${NC}"
-        echo -e "${YELLOW}Please run this script from the project directory${NC}"
+    if [[ ! -f "$SOURCE_DIR/$SCRIPT_NAME" ]]; then
+        echo -e "${RED}Error: Source file not found: $SOURCE_DIR/$SCRIPT_NAME${NC}" >&2
+        echo -e "${YELLOW}Please run this script from the project directory${NC}" >&2
         exit 1
     fi
 
@@ -54,7 +53,7 @@ main() {
     INSTALL_PATH="$INSTALL_DIR/$SCRIPT_NAME"
 
     echo -e "${CYAN}Installation summary:${NC}"
-    echo "  Source:  $SOURCE_FILE"
+    echo "  Source:  $SOURCE_DIR/"
     echo "  Target:  $INSTALL_PATH"
     echo ""
 
@@ -87,10 +86,12 @@ main() {
         fi
     fi
 
-    # Copy the script
+    # Copy the script and supporting files
     echo -e "${YELLOW}Installing $SCRIPT_NAME...${NC}"
-    cp "$SOURCE_FILE" "$INSTALL_PATH"
-    chmod +x "$INSTALL_PATH"
+    cp -r "$SOURCE_DIR"/* "$INSTALL_DIR/"
+    chmod +x "$INSTALL_DIR/$SCRIPT_NAME"
+    chmod +x "$INSTALL_DIR/src"/*/*.sh 2>/dev/null || true
+    chmod +x "$INSTALL_DIR/src/preview"/*.pl 2>/dev/null || true
 
     echo -e "${GREEN}Successfully installed to: $INSTALL_PATH${NC}"
     echo ""

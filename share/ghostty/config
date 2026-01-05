@@ -1,0 +1,16 @@
+# Ghostty Configuration Template
+# Copy this to your Ghostty config location or use as reference
+
+# Theme (uncomment and set your preferred theme)
+# theme = Dracula
+
+# Font configuration
+# font-family = JetBrains Mono Nerd Font
+# font-size = 13
+
+# Shell integration
+# shell-integration = brew,no-cursor
+
+# Key bindings
+# ctrl-shift-v = paste_from_clipboard
+# ctrl-shift-c = copy_to_clipboard
