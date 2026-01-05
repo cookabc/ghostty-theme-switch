@@ -118,7 +118,7 @@ set_random_theme() {
 # Set light/dark theme
 set_mode_theme() {
     local mode="$1"
-    local theme_name="Github Light"
+    local theme_name="GitHub Light Default"
     [[ "$mode" == "dark" ]] && theme_name="Dracula"
     apply_theme "$theme_name"
 }
