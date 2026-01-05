@@ -4,7 +4,7 @@
 
 set -e
 
-VERSION="2.3.0"
+VERSION="2.4.0"
 
 # Config file location
 CONFIG_FILE="$HOME/Library/Application Support/com.mitchellh.ghostty/config"
@@ -20,20 +20,14 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 CYAN='\033[0;36m'
-BLUE='\033[0;34m'
-MAGENTA='\033[0;35m'
 BOLD='\033[1m'
-DIM='\033[2m'
 NC='\033[0m'
 
-# Find Ghostty executable
-if [[ "$OSTYPE" == "darwin"* ]] && [[ -x "/Applications/Ghostty.app/Contents/MacOS/ghostty" ]]; then
-    GHOSTTY_EXEC="/Applications/Ghostty.app/Contents/MacOS/ghostty"
-elif [[ "$OSTYPE" == "darwin"* ]] && [[ -x "$HOME/Applications/Ghostty.app/Contents/MacOS/ghostty" ]]; then
-    GHOSTTY_EXEC="$HOME/Applications/Ghostty.app/Contents/MacOS/ghostty"
-else
-    GHOSTTY_EXEC="ghostty"
-fi
+# Theme directory
+THEMES_DIR="/Applications/Ghostty.app/Contents/Resources/ghostty/themes"
+
+# Preview script location
+PREVIEW_SCRIPT="/tmp/ghostty-theme-preview/fzf-preview.sh"
 
 # Usage
 usage() {
@@ -49,7 +43,7 @@ usage() {
     echo "  ghostty-theme version            Show version"
     echo ""
     echo "Examples:"
-    echo "  ghostty-theme                    # Interactive selector"
+    echo "  ghostty-theme                    # Interactive selector with preview"
     echo "  ghostty-theme \"Dracula\"          # Apply Dracula theme"
     echo "  ghostty-theme random             # Random theme"
 }
@@ -129,6 +123,89 @@ set_mode_theme() {
     apply_theme "$theme_name"
 }
 
+# Ensure preview script exists
+ensure_preview_script() {
+    mkdir -p /tmp/ghostty-theme-preview
+    cat > "$PREVIEW_SCRIPT" << 'PREVIEWEOF'
+#!/usr/bin/env perl
+my $theme = $ARGV[0];
+my $themes_dir = "/Applications/Ghostty.app/Contents/Resources/ghostty/themes";
+my $theme_file = "$themes_dir/$theme";
+
+if (-f $theme_file) {
+    # Read palette colors (0-15)
+    my @colors;
+    my $bg = "#1a1b26";
+    my $fg = "#c0caf5";
+    open(my $fh, '<', $theme_file) or die "Cannot open $theme_file: $!";
+    while (my $line = <$fh>) {
+        if ($line =~ /^palette = (\d+)=#([0-9a-fA-F]{6})/) {
+            $colors[$1] = $2;
+        } elsif ($line =~ /^background = #([0-9a-fA-F]{6})/) {
+            $bg = $1;
+        } elsif ($line =~ /^foreground = #([0-9a-fA-F]{6})/) {
+            $fg = $1;
+        }
+    }
+    close($fh);
+
+    # RGB to 256-color conversion
+    sub rgb_to_256 {
+        my ($r, $g, $b) = @_;
+        if ($r == $g && $g == $b) {
+            return 16 if $r < 8;
+            return 231 if $r > 248;
+            return int(($r - 8) / 10) + 232;
+        }
+        my $ir = int(($r - 35) / 40);
+        my $ig = int(($g - 35) / 40);
+        my $ib = int(($b - 35) / 40);
+        $ir = 0 if $ir < 0; $ir = 5 if $ir > 5;
+        $ig = 0 if $ig < 0; $ig = 5 if $ig > 5;
+        $ib = 0 if $ib < 0; $ib = 5 if $ib > 5;
+        return 16 + $ir * 36 + $ig * 6 + $ib;
+    }
+
+    sub to_256 {
+        my ($hex) = @_;
+        my ($r, $g, $b) = map { hex } ($hex =~ /(..)(..)(..)/);
+        return rgb_to_256($r, $g, $b);
+    }
+
+    my $bg_c = to_256($bg);
+    my $fg_c = to_256($fg);
+    my @c;
+    for my $i (0..7) {
+        $c[$i] = defined($colors[$i]) ? to_256($colors[$i]) : 0;
+    }
+
+    # Print theme header
+    printf "\033[48;5;%dm\033[38;5;%dm  %s  \033[0m\n", $bg_c, $fg_c, $theme;
+    print "\n";
+
+    # Print Colors section
+    print "\033[1mColors:\033[0m\n";
+    printf "  \033[48;5;%dm   \033[0m blk ", $c[0];
+    printf "\033[48;5;%dm   \033[0m red ", $c[1];
+    printf "\033[48;5;%dm   \033[0m grn ", $c[2];
+    printf "\033[48;5;%dm   \033[0m yel ", $c[3];
+    printf "\033[48;5;%dm   \033[0m blu ", $c[4];
+    printf "\033[48;5;%dm   \033[0m mag ", $c[5];
+    printf "\033[48;5;%dm   \033[0m cyn ", $c[6];
+    printf "\033[48;5;%dm   \033[0m wht\n", $c[7];
+    print "\n";
+
+    # Print Sample section
+    print "\033[1mSample:\033[0m\n";
+    printf "\033[38;5;%dm# Comment\033[0m\n", $c[0];
+    printf "\033[38;5;%dmfunction\033[38;5;%dm \033[38;5;%dmhello\033[38;5;%dm()\033[38;5;%dm {\033[0m\n", $c[2], $c[7], $c[4], $c[3];
+    printf "  \033[38;5;%dm\033[38;5;%decho\033[38;5;%dm \"\033[38;5;%dmHello\033[38;5;%dm\"\033[0m\n", $c[0], $c[6], $c[7], $c[3], $c[7];
+    printf "\033[38;5;%dm}\033[0m\n", $c[3];
+}
+PREVIEWEOF
+    chmod +x "$PREVIEW_SCRIPT"
+}
+
 # Simple selector (fallback when fzf not available)
 simple_select() {
     local current=$(get_current_theme)
@@ -200,62 +277,10 @@ simple_select() {
     done
 }
 
-# Preview script location
-PREVIEW_SCRIPT="/tmp/ghostty-theme-preview/preview.sh"
-
-# Ensure preview script exists
-ensure_preview_script() {
-    mkdir -p /tmp/ghostty-theme-preview
-    cat > "$PREVIEW_SCRIPT" << 'PREVIEWEOF'
-#!/bin/bash
-CONFIG_FILE="$HOME/Library/Application Support/com.mitchellh.ghostty/config"
-[ ! -f "$CONFIG_FILE" ] && CONFIG_FILE="$XDG_CONFIG_HOME/ghostty/config"
-[ ! -f "$CONFIG_FILE" ] && CONFIG_FILE="$HOME/.config/ghostty/config"
-THEME="$1"
-printf "\033[1;36m┌─────────────────────────────────┐\033[0m\n"
-printf "\033[1;36m│  %s\033[0m\n" "$THEME"
-printf "\033[1;36m└─────────────────────────────────┘\033[0m\n"
-printf "\n"
-printf "\033[1mColors:\033[0m\n"
-printf "  \033[31m■\033[0m Red \033[32m■\033[0m Green \033[33m■\033[0m Yellow \033[34m■\033[0m Blue\n"
-printf "  \033[35m■\033[0m Magenta \033[36m■\033[0m Cyan \033[37m■\033[0m White\n"
-printf "\n"
-printf "\033[1mSample Code:\033[0m\n"
-printf "\033[2m# Comment\033[0m\n"
-printf "\033[32mfunction\033[0m \033[34mhello\033[0m\033[33m()\033[0m {\n"
-printf "  \033[36mecho\033[0m \033[33m\"Hello\"\033[0m\n"
-printf "\033[33m}\033[0m\n"
-PREVIEWEOF
-    chmod +x "$PREVIEW_SCRIPT"
-}
-
 # fzf selector with preview
 fzf_select() {
     local current=$(get_current_theme)
-    local themes_dir="/Applications/Ghostty.app/Contents/Resources/ghostty/themes"
-
-    # Create preview script that reads theme colors
-    local preview_cmd='THEME="{}"
-THEME_FILE="'"$themes_dir"'/$THEME"
-if [ -f "$THEME_FILE" ]; then
-    echo "━━━━━━━━━━━━━━━━━━━━"
-    printf "\033[1m  %s\033[0m" "$THEME"
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-    # Extract colors and display them
-    awk -F= "/^palette = [0-9]+=/ {gsub(/ /, \"\", \$2); printf \"\033[48;2;%sm   \033[0m\", substr(\$2, 2)}" "$THEME_FILE"
-    echo ""
-    echo ""
-    if [ "$THEME" = "'"$current"'" ]; then
-        echo "  ● Current theme"
-    else
-        echo "  → Press Enter"
-    fi
-else
-    echo "Theme: $THEME"
-    echo "(colors not found)"
-fi'
+    ensure_preview_script
 
     local selected
     selected=$(get_all_themes | \
@@ -268,7 +293,7 @@ fi'
             --pointer="→" \
             --color=header:cyan,pointer:cyan,marker:green,preview-border:cyan \
             --preview-window=right:30% \
-            --preview="/tmp/ghostty-theme-preview/fzf-preview.sh {}")
+            --preview="$PREVIEW_SCRIPT {}")
 
     if [[ -n "$selected" ]]; then
         apply_theme "$selected"

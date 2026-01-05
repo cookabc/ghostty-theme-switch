@@ -1,11 +1,11 @@
 # Ghostty Theme Switcher
 
-A command-line tool to quickly switch themes in the [Ghostty](https://ghostty.org) terminal emulator with **in-terminal preview**.
+A command-line tool to quickly switch themes in the [Ghostty](https://ghostty.org) terminal emulator with **live color preview**.
 
 ## Features
 
 - **200+ built-in themes** - Access all Ghostty's built-in themes
-- **In-terminal preview** - Preview panel showing theme info while browsing
+- **Live color preview** - See each theme's actual colors while browsing
 - **fzf integration** - Fuzzy search theme selector with [fzf](https://github.com/junegunn/fzf)
 - **Fallback selector** - Simple numbered list selector when fzf is not available
 - **Quick commands** - Set light/dark themes, random theme, or specific themes
@@ -34,7 +34,12 @@ ghostty-theme
 ```
 
 - **Left panel**: Theme list (fuzzy search with typing)
-- **Right panel**: Preview showing theme name, colors, and sample code
+- **Right panel**: Live preview showing theme colors
+  - Theme name with background/foreground colors
+  - **Colors**: 8 palette color swatches
+  - **Sample**: Syntax-highlighted code using theme colors
+
+Navigation:
 - `↑↓` - Navigate themes
 - `Enter` - Apply selected theme
 - `Esc` - Cancel
@@ -64,6 +69,13 @@ ghostty-theme current
 ghostty-theme version
 ```
 
+## How It Works
+
+The preview panel reads Ghostty's built-in theme definition files and displays:
+- The theme's background and foreground colors
+- The 8 standard ANSI colors (black, red, green, yellow, blue, magenta, cyan, white)
+- A sample code snippet with syntax highlighting using the theme's color palette
+
 ## Applying Changes
 
 After applying a theme, reload your Ghostty config:
@@ -88,6 +100,7 @@ rm -rf /tmp/ghostty-theme-preview
 - Ghostty terminal emulator
 - Bash or zsh shell
 - fzf (optional, for fuzzy search and preview)
+- perl (for preview functionality)
 
 ## License
 
